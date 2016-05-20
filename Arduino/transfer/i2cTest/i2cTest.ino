@@ -11,14 +11,14 @@
 */
 
 #include <Wire.h>
-#include <Audio.h>
+//#include <Audio.h>
 #include <SPI.h>
 #include <SD.h>
 #include <SerialFlash.h>
 #include <Bounce.h>
 
 
-AudioControlSGTL5000     sgtl5000_1; 
+//AudioControlSGTL5000     sgtl5000_1; 
 
 #define BUTTON 0
 Bounce b = Bounce(0, 8); // 8 = 8 ms debounce time
@@ -32,36 +32,39 @@ void setup() {
  
  pinMode(BUTTON, INPUT_PULLUP);
  
- sgtl5000_1.enable();
+// sgtl5000_1.enable();
 
  Wire.begin(THIS_ADDRESS);
- Wire.onRequest(requestEvent);
+ Wire.onReceive(receiveEvent);
 }
 
 void loop() {
-  int rbyte;
   b.update();
   if (b.fallingEdge()) {
     Serial.print(THIS_ADDRESS);
-    Serial.print(" requests 30 bytes from ");
-    Serial.print(OTHER_ADDRESS);
-    rbyte = Wire.requestFrom(OTHER_ADDRESS, 30);
-    Serial.print(" (receiving ");
-    Serial.print(rbyte);
-    Serial.print("):");
-    while (Wire.available() > 0){
-      char c = Wire.read();
-      Serial.print(c);
-    }
-    Serial.println(":end");
+    Serial.print(" send to ");
+    Serial.println(OTHER_ADDRESS);
+    Wire.beginTransmission(OTHER_ADDRESS);
+    Wire.send(1);
+    Wire.endTransmission();
+    
   }
-  delay(100);
+  delay(200);
+
+    // this is not pretty, but necessary for teensy to switch between slave / master modes once it has read stuff...
+    Wire.begin(THIS_ADDRESS);
+    Wire.onReceive(receiveEvent);
+
 }
 
-void requestEvent(){
+void receiveEvent(int howMany){
   Serial.print(THIS_ADDRESS);
   Serial.print(" received a request from ");
-  Serial.println(OTHER_ADDRESS);
-
-  Wire.write("Hello ");
+  Serial.print(OTHER_ADDRESS);
+  Serial.print(":");
+  while (Wire.available() > 0){
+    boolean c = Wire.receive();
+    Serial.print(c, DEC);
+  }
+  Serial.println(":end");
 }
