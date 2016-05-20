@@ -11,42 +11,57 @@
 */
 
 #include <Wire.h>
+#include <Audio.h>
+#include <SPI.h>
+#include <SD.h>
+#include <SerialFlash.h>
+#include <Bounce.h>
 
-#define LED 9
-#define BUTTON 10
 
-#define THIS_ADDRESS 0x8
-#define OTHER_ADDRESS 0x9
+AudioControlSGTL5000     sgtl5000_1; 
+
+#define BUTTON 0
+Bounce b = Bounce(0, 8); // 8 = 8 ms debounce time
+
+#define THIS_ADDRESS 0x11
+#define OTHER_ADDRESS 0x10
 
 boolean last_state = HIGH;
 
 void setup() {
-  Serial.println("Setup");
- pinMode(LED, OUTPUT);
- digitalWrite(LED, LOW);
  
- pinMode(BUTTON, INPUT);
- digitalWrite(BUTTON, HIGH);
+ pinMode(BUTTON, INPUT_PULLUP);
  
+ sgtl5000_1.enable();
+
  Wire.begin(THIS_ADDRESS);
- Wire.onReceive(receiveEvent);
+ Wire.onRequest(requestEvent);
 }
 
 void loop() {
- if (digitalRead(BUTTON) != last_state){
-    Serial.println("Button pressed");
-   last_state = digitalRead(BUTTON);
-   Wire.beginTransmission(OTHER_ADDRESS);
-   Wire.write(last_state);
-   Wire.endTransmission();
- }
+  int rbyte;
+  b.update();
+  if (b.fallingEdge()) {
+    Serial.print(THIS_ADDRESS);
+    Serial.print(" requests 30 bytes from ");
+    Serial.print(OTHER_ADDRESS);
+    rbyte = Wire.requestFrom(OTHER_ADDRESS, 30);
+    Serial.print(" (receiving ");
+    Serial.print(rbyte);
+    Serial.print("):");
+    while (Wire.available() > 0){
+      char c = Wire.read();
+      Serial.print(c);
+    }
+    Serial.println(":end");
+  }
+  delay(100);
 }
 
-void receiveEvent(int howMany){
- while (Wire.available() > 0){
-   boolean b = Wire.read();
-   Serial.print(b, DEC);
-   digitalWrite(LED, !b);
- }
- Serial.println(); 
+void requestEvent(){
+  Serial.print(THIS_ADDRESS);
+  Serial.print(" received a request from ");
+  Serial.println(OTHER_ADDRESS);
+
+  Wire.write("Hello ");
 }
