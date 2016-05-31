@@ -8,29 +8,20 @@
 // Teensy 3.2
 // Audio Shield http://www.pjrc.com/store/teensy3_audio.html
 //
-// Two pushbuttons need:
-//   Record Button: pin 0 to GND
-//   Play Button:   pin 1 to GND
+// Three pushbuttons need:
+//   Record Button: pin 4 to GND
+//   Play Button:   pin 5 to GND
+//   Connect Button: pin 6 to GND
 //
-// Master Side:
-//    SDA  o  o SCL
-//    GND  x  x Connected
-//
-//    Connected pin: 2 to GND (if connected, initiate transfer)
-//    LED for transmission on pin 3
-// 
-// Slave Side:
-//    SDA  x  x SCL
-//    GND  o  o GND
+// Status LEDs
+//   Connection pin 7   
 //
 //
-// Teensy: 
-//    SCL 19 
-//    SDA 18
-//    GND 
-//
-//
-
+// Bluetooth Module
+//  Serial: 
+//    RX 0
+//    TX 1
+//  Interrupt: 3
 
 
 #include <Bounce.h>
@@ -39,6 +30,8 @@
 #include <SPI.h>
 #include <SD.h>
 #include <SerialFlash.h>
+#include "BluetoothSerial.h"
+
 
 // GUItool: begin automatically generated code
 AudioInputI2S            i2s2;           //xy=105,63
@@ -53,20 +46,23 @@ AudioConnection          patchCord4(playRaw1, 0, i2s1, 1);
 AudioControlSGTL5000     sgtl5000_1;     //xy=265,212
 // GUItool: end automatically generated code
 
+#define RECBUTTON 4
+#define PLAYBUTTON 5
+#define CONNECTBUTTON 6
+#define CONNECTLED 7
+
 // Bounce objects to easily and reliably read the buttons
-Bounce buttonRecord = Bounce(0, 8); // 8 = 8 ms debounce time
-Bounce buttonPlay =   Bounce(1, 8);  
-Bounce buttonConnected =   Bounce(2, 8);  
+Bounce buttonRecord = Bounce(RECBUTTON, 8); // 8 = 8 ms debounce time
+Bounce buttonPlay =   Bounce(PLAYBUTTON, 8);  
+Bounce buttonConnect =   Bounce(CONNECTBUTTON, 8);  
 
 
 // which input on the audio shield will be used?
 //const int myInput = AUDIO_INPUT_LINEIN;
 const int myInput = AUDIO_INPUT_MIC;
 
-// unique cube i2c adresses  
-// http://www.pjrc.com/teensy/td_libs_Wire.html
-#define MY_ADDRESS 0x10
-#define OTHER_ADDRESS 0x11
+// Unique RCube name
+const char* myId = "RCube1";
 
 // Remember which mode we're doing
 #define STOPPED 0
@@ -74,32 +70,32 @@ const int myInput = AUDIO_INPUT_MIC;
 #define PLAYING 2
 #define MASTER 4
 #define SLAVE 5
-int mode = 0;  // 0=stopped, 1=recording, 2=playing
+int mode = STOPPED;  // 0=stopped, 1=recording, 2=playing
+
+// Remember BT connection status
+#define CONNECTED 1
+#define NOT_CONNECTED 0
+#define TRYING_TO_CONNECT 2
+int btstatus = NOT_CONNECTED;
 
 // The file where data is recorded
 File frec;
 
 void setup() {
   // Configure the pushbutton pins
-  pinMode(0, INPUT_PULLUP);
-  pinMode(1, INPUT_PULLUP);
-  pinMode(2, INPUT_PULLUP);
-  pinMode(3, OUTPUT);
+  pinMode(RECBUTTON, INPUT_PULLUP);
+  pinMode(PLAYBUTTON, INPUT_PULLUP);
+  pinMode(CONNECTBUTTON, INPUT_PULLUP);
+  pinMode(CONNECTLED, OUTPUT);
 
-  digitalWrite(3, LOW);
+  digitalWrite(CONNECTLED, LOW);
 
   // Audio connections require memory, and the record queue
   // uses this memory to buffer incoming audio.
   AudioMemory(60);
 
   // Enable the audio shield, select input, and enable output
-  sgtl5000_1.enable();
-  // PROBLEM HERE 
-  // enable() will always start the teensy as master without address, we need every cube to have an adress however
-  // see http://forum.arduino.cc/index.php?topic=13579.0
-  Wire.begin(MY_ADDRESS);
-  Wire.onRequest(requestEvent);
-  
+  sgtl5000_1.enable();  
   sgtl5000_1.inputSelect(myInput);
   sgtl5000_1.unmuteHeadphone();
   sgtl5000_1.volume(0.5);
@@ -114,59 +110,66 @@ void setup() {
       delay(500);
     }
   }
+
+  // setup Bluetooth
+  BTSerial.begin(9600);  
+  BTSerial.sendCommand("AT+DEFAULT\r\n");
+//  BTSerial.reset();
+  BTSerial.setDeviceName(myId);
+//  BTSerial.setBaudRate(9600);
+  BTSerial.sendCommand("AT+ROLE1\r\n");
+  BTSerial.sendCommand("AT+ROLE1\r\n");
+  BTSerial.sendCommand("AT+ROLE1\r\n");
+  BTSerial.sendCommand("AT+ROLE\r\n");
+//  BTSerial.onSerialConnectionChange(connectionChange);
 }
 
 
 void loop() {
-  // First, read the buttons
-  buttonRecord.update();
-  buttonPlay.update();
-  buttonConnected.update();
+//  // First, read the buttons
+//  buttonRecord.update();
+//  buttonPlay.update();
+//  buttonConnect.update();
+//
+//  if (mode != MASTER && mode != SLAVE) {
+//    // Respond to button presses
+//    if (buttonRecord.fallingEdge()) {
+//      Serial.println("Record Button Press");
+//      if (mode == PLAYING) stopPlaying();
+//      if (mode == STOPPED) startRecording();
+//    }
+//    if (buttonRecord.risingEdge()) {
+//      Serial.println("Record Button Release");
+//      if (mode == RECORDING) stopRecording();
+//      if (mode == PLAYING) stopPlaying();
+//    }
+//    if (buttonPlay.fallingEdge()) {
+//      Serial.println("Play Button Press");
+//      if (mode == RECORDING) stopRecording();
+//      if (mode == STOPPED) startPlaying();
+//    }
+//    if (buttonConnect.fallingEdge()) {
+//      Serial.println("Connected!");
+//      if (mode == RECORDING) stopRecording();
+//      if (mode == PLAYING) stopPlaying();
+//      startTransmission();
+//    }
+//  }
+//
+//  if (mode == MASTER && btstatus == CONNECTED) {
+//    transferRecording();
+//  }
+//  if (mode == RECORDING) {
+//    continueRecording();
+//  }
+//  if (mode == PLAYING) {
+//    continuePlaying();
+//  }
+//
+//  // when using a microphone, continuously adjust gain
+//  if (myInput == AUDIO_INPUT_MIC) adjustMicLevel();
 
-  if (mode != MASTER && mode != SLAVE) {
-    // Respond to button presses
-    if (buttonRecord.fallingEdge()) {
-      Serial.println("Record Button Press");
-      if (mode == PLAYING) stopPlaying();
-      if (mode == STOPPED) startRecording();
-    }
-    if (buttonRecord.risingEdge()) {
-      Serial.println("Record Button Release");
-      if (mode == RECORDING) stopRecording();
-      if (mode == PLAYING) stopPlaying();
-    }
-    if (buttonPlay.fallingEdge()) {
-      Serial.println("Play Button Press");
-      if (mode == RECORDING) stopRecording();
-      if (mode == STOPPED) startPlaying();
-    }
-    if (buttonConnected.fallingEdge()) {
-      Serial.println("Connected!");
-      if (mode == RECORDING) stopRecording();
-      if (mode == PLAYING) stopPlaying();
-      startTransmission();
-    }
-  }
-
-  // If we're playing or recording or transmitting carry on...
-  if (mode == MASTER) {
-    transmit();
-  }
-  if (mode == RECORDING) {
-    continueRecording();
-  }
-  if (mode == PLAYING) {
-    continuePlaying();
-  }
-
-  // when using a microphone, continuously adjust gain
-  if (myInput == AUDIO_INPUT_MIC) adjustMicLevel();
-
-  // this is not pretty, but necessary for teensy to switch between slave / master modes once it has read stuff...
-  delay(100);
-  Wire.begin(MY_ADDRESS);
-  Wire.onRequest(requestEvent);
-
+delay(100);
 }
 
 
@@ -242,91 +245,61 @@ void continuePlaying() {
 
 void stopPlaying() {
   Serial.println("stopPlaying");
-  if (mode == 2) playRaw1.stop();
+  if (mode == PLAYING) playRaw1.stop();
   mode = STOPPED;
 }
 
 void startTransmission() {
-  Serial.print("my address is ");
-  Serial.print(MY_ADDRESS);
-  Serial.print(" trying other address ");
-  Serial.println(OTHER_ADDRESS);
-  mode = MASTER;
-  if (SD.exists("RECORD.RAW")) {
-    SD.remove("RECORD.RAW");  
-    Serial.println("Removed own recording");
-  }
-  frec = SD.open("RECORD.RAW", FILE_WRITE);
-  if (frec) {
-    digitalWrite(3, HIGH); // switch on the transmission LED
+  Serial.println("Connect button pressed, initiating connection as master");
+  int devices;
+  char mac[32];
+
+  BTSerial.makeMaster();
+  devices = BTSerial.searchDevices();
+  if (devices > 0) {
+    for (int i=0;i<devices;i++) {
+      BTSerial.availableDevices[i].toCharArray(mac,32);
+      String rname = String(BTSerial.getRemoteName(mac));
+      if (rname.indexOf("RCube") > 0) {
+        BTSerial.connectTo(mac);
+        i = devices;
+      }
+    }
+    mode = MASTER;
+    Serial.println("Found and connected to other cube");
   }
   else {
-    Serial.println("Cannot open file, aborting transmission");
-    mode = STOPPED; // abort if file cannot be opened
+    Serial.println("No remote devices found");
   }
 }
 
-void transmit() {
-  char buffer[512];
-  int i = 0;
-  Serial.println("Requesting to transmit recording as MASTER");
+void transferRecording() {
+  Serial.println("Transferring the recording to slave");
 
-//  Wire.requestFrom(OTHER_ADDRESS, 512); 
-//  while(Wire.available()) {
-//    buffer[i] = Wire.read();
-//    i++;
-//  }
-//  frec.write(buffer, i);
+  // tbd
 
-  Serial.print("Reading:");
-  Wire.requestFrom(OTHER_ADDRESS, 6);
-  while (Wire.available() > 0){
-      char c = Wire.read();
-      Serial.print(c);
-  }
-  Serial.println(":end");
+  // disconnect?? maybe make slave??
+  mode = STOPPED;
+}
 
-  if (i < 512) { // all file data is sent or transmission is interrupted
-    frec.close();
+void connectionChange() {
+
+  Serial.println("Connection status changed");
+
+  if (btstatus == CONNECTED) {
+    if (mode == MASTER) BTSerial.makeSlave(); // thats the default state of the BT module, make sure it gets back
     mode = STOPPED;
-    Serial.println("MASTER: File data transmission completed");
-    digitalWrite(3, LOW); // switch off the transmission LED
+    btstatus = NOT_CONNECTED;
   }
-}  
-
-// receive a connection as slave from another cube
-void requestEvent() {
-  char buffer[512];
-  int i = 0;
-  if (mode != SLAVE) {
-    Serial.println("New connection request");
-    Serial.print("my address is ");
-    Serial.print(MY_ADDRESS);
-    Serial.print(" request is from ");
-    Serial.println(OTHER_ADDRESS);
-    if (mode == RECORDING) stopRecording();
-    if (mode == PLAYING) stopPlaying();
-    frec = SD.open("RECORD.RAW", FILE_READ);
-    if(frec) {
-      digitalWrite(3, HIGH); // switch on the transmission LED
+  if (btstatus == NOT_CONNECTED) {
+    if (mode != MASTER) {
+      if (mode == RECORDING) stopRecording();
+      if (mode == PLAYING) stopPlaying();
       mode = SLAVE;
     }
+    btstatus = CONNECTED;
   }
-  if (mode == SLAVE) {
-    Wire.write("Hello ");
-//    while (frec.available()>0 && i < 512) {
-//      buffer[i] = frec.read();
-//      i++;
-//    }
-//    Wire.write(buffer,i);
-    Serial.println("Data Sent");
-    if (i < 512) { // all file data is sent
-      frec.close();
-      mode = STOPPED;
-      Serial.println("SLAVE: File data transmission completed");
-      digitalWrite(3, LOW); // switch off the transmission LED    
-    }
-  }
+  
 }
 
 void adjustMicLevel() {
