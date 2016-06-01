@@ -30,7 +30,7 @@
 #include <SPI.h>
 #include <SD.h>
 #include <SerialFlash.h>
-#include "BluetoothSerial.h"
+#include "BlueSmirf.h"
 
 
 // GUItool: begin automatically generated code
@@ -112,64 +112,65 @@ void setup() {
   }
 
   // setup Bluetooth
-  BTSerial.begin(9600);  
-  BTSerial.sendCommand("AT+DEFAULT\r\n");
-//  BTSerial.reset();
-  BTSerial.setDeviceName(myId);
-//  BTSerial.setBaudRate(9600);
-  BTSerial.sendCommand("AT+ROLE1\r\n");
-  BTSerial.sendCommand("AT+ROLE1\r\n");
-  BTSerial.sendCommand("AT+ROLE1\r\n");
-  BTSerial.sendCommand("AT+ROLE\r\n");
-//  BTSerial.onSerialConnectionChange(connectionChange);
+  BSSerial.begin(9600);  
+  BSSerial.setDeviceName(myId);
 }
 
 
 void loop() {
-//  // First, read the buttons
-//  buttonRecord.update();
-//  buttonPlay.update();
-//  buttonConnect.update();
-//
-//  if (mode != MASTER && mode != SLAVE) {
-//    // Respond to button presses
-//    if (buttonRecord.fallingEdge()) {
-//      Serial.println("Record Button Press");
-//      if (mode == PLAYING) stopPlaying();
-//      if (mode == STOPPED) startRecording();
-//    }
-//    if (buttonRecord.risingEdge()) {
-//      Serial.println("Record Button Release");
-//      if (mode == RECORDING) stopRecording();
-//      if (mode == PLAYING) stopPlaying();
-//    }
-//    if (buttonPlay.fallingEdge()) {
-//      Serial.println("Play Button Press");
-//      if (mode == RECORDING) stopRecording();
-//      if (mode == STOPPED) startPlaying();
-//    }
-//    if (buttonConnect.fallingEdge()) {
-//      Serial.println("Connected!");
-//      if (mode == RECORDING) stopRecording();
-//      if (mode == PLAYING) stopPlaying();
-//      startTransmission();
-//    }
-//  }
-//
-//  if (mode == MASTER && btstatus == CONNECTED) {
-//    transferRecording();
-//  }
-//  if (mode == RECORDING) {
-//    continueRecording();
-//  }
-//  if (mode == PLAYING) {
-//    continuePlaying();
-//  }
-//
-//  // when using a microphone, continuously adjust gain
-//  if (myInput == AUDIO_INPUT_MIC) adjustMicLevel();
+  // First, read the buttons
+  buttonRecord.update();
+  buttonPlay.update();
+  buttonConnect.update();
 
-delay(100);
+  if (mode != MASTER && mode != SLAVE) {
+    // Respond to button presses
+    if (buttonRecord.fallingEdge()) {
+      Serial.println("Record Button Press");
+      if (mode == PLAYING) stopPlaying();
+      if (mode == STOPPED) startRecording();
+    }
+    if (buttonRecord.risingEdge()) {
+      Serial.println("Record Button Release");
+      if (mode == RECORDING) stopRecording();
+      if (mode == PLAYING) stopPlaying();
+    }
+    if (buttonPlay.fallingEdge()) {
+      Serial.println("Play Button Press");
+      if (mode == RECORDING) stopRecording();
+      if (mode == STOPPED) startPlaying();
+    }
+    if (buttonConnect.fallingEdge()) {
+      Serial.println("Connected!");
+      if (mode == RECORDING) stopRecording();
+      if (mode == PLAYING) stopPlaying();
+      startTransmission();
+    }
+  }
+
+  btstatus = BSSerial.checkConnected();
+  
+  if (mode == MASTER && btstatus == CONNECTED) {
+    transferRecording();
+  }
+  if (mode != MASTER && mode != SLAVE && btstatus == CONNECTED) {
+    if (mode == RECORDING) stopRecording();
+    if (mode == PLAYING) stopPlaying();
+    mode = SLAVE;
+  }
+  if (mode == SLAVE  && btstatus == NOT_CONNECTED) {
+    mode = STOPPED;
+  }
+  if (mode == RECORDING) {
+    continueRecording();
+  }
+  if (mode == PLAYING) {
+    continuePlaying();
+  }
+
+  // when using a microphone, continuously adjust gain
+  if (myInput == AUDIO_INPUT_MIC) adjustMicLevel();
+
 }
 
 
@@ -252,20 +253,18 @@ void stopPlaying() {
 void startTransmission() {
   Serial.println("Connect button pressed, initiating connection as master");
   int devices;
-  char mac[32];
 
-  BTSerial.makeMaster();
-  devices = BTSerial.searchDevices();
+  BSSerial.makeMaster();
+  devices = BSSerial.searchDevices();
   if (devices > 0) {
     for (int i=0;i<devices;i++) {
-      BTSerial.availableDevices[i].toCharArray(mac,32);
-      String rname = String(BTSerial.getRemoteName(mac));
-      if (rname.indexOf("RCube") > 0) {
-        BTSerial.connectTo(mac);
-        i = devices;
+      if (BSSerial.availableDevicesNames[i].indexOf("RCube") > 0) {
+        BSSerial.connectTo(BSSerial.availableDevicesMacs[i]);
       }
+      i = devices;
     }
     mode = MASTER;
+    btstatus = CONNECTED;
     Serial.println("Found and connected to other cube");
   }
   else {
@@ -279,27 +278,10 @@ void transferRecording() {
   // tbd
 
   // disconnect?? maybe make slave??
+
+  BSSerial.makeSlave();
   mode = STOPPED;
-}
-
-void connectionChange() {
-
-  Serial.println("Connection status changed");
-
-  if (btstatus == CONNECTED) {
-    if (mode == MASTER) BTSerial.makeSlave(); // thats the default state of the BT module, make sure it gets back
-    mode = STOPPED;
-    btstatus = NOT_CONNECTED;
-  }
-  if (btstatus == NOT_CONNECTED) {
-    if (mode != MASTER) {
-      if (mode == RECORDING) stopRecording();
-      if (mode == PLAYING) stopPlaying();
-      mode = SLAVE;
-    }
-    btstatus = CONNECTED;
-  }
-  
+  btstatus = NOT_CONNECTED;
 }
 
 void adjustMicLevel() {
