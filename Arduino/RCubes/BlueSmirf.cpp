@@ -31,29 +31,28 @@
 
 #include "BlueSmirf.h"
 
-#define INTERRUPT_PIN 3
 #define RX 0
 #define TX 1
 
 BlueSmirf BSSerial(RX,TX);
 
 
-void BlueSmirf::sendCommand(const char* cmd, bool cr) {
+void BlueSmirf::sendCommand(const char* cmd, bool cr, bool vb) {
   
-  Serial.print("Cmd:");
+  if (vb) Serial.print("Cmd:");
   if (cr) {
-    Serial.println(cmd);
+    if (vb) Serial.println(cmd);
     mySerial.println(cmd);
   }
   else {
-    Serial.print(cmd);
+    if (vb) Serial.print(cmd);
     mySerial.print(cmd);
   }
-  Serial.print(" start response|");
+  if (vb) Serial.print(" start response|");
   delay(100);
   receiveMessage();
-  Serial.print(response);
-  Serial.println("| end response");
+  if (vb) Serial.print(response);
+  if (vb) Serial.println("| end response");
 }
 
 void BlueSmirf::receiveMessage(void){
@@ -69,7 +68,7 @@ void BlueSmirf::receiveMessage(void){
     
     if (mySerial.available() > 0) {
       // read the incoming byte:
-      incomingByte = Serial.read();
+      incomingByte = mySerial.read();
       if(incomingByte != 13){
         message[index++] = incomingByte;
         keepReading = true;
@@ -86,32 +85,78 @@ void BlueSmirf::begin(unsigned long speed) {
    mySerial.begin(speed);
    enterCmdMode();
    sendCommand("ST,253"); // Continous configuration, local only.
+   sendCommand("SM,0");
+   sendCommand("SO,%");
    leaveCmdMode();
+   
 }
 
 
 
 
 void BlueSmirf::enterCmdMode() {
-  Serial.println("Enter command mode");
-  sendCommand("$$$",false);
+//  Serial.println("Enter command mode");
+  sendCommand("$$$",false,false);
 }
 
 void BlueSmirf::leaveCmdMode() {
-  Serial.println("Leave command mode");
-  sendCommand("---");
+//  Serial.println("Leave command mode");
+  sendCommand("---",true,false);
+}
+
+void BlueSmirf::killConnection() {
+  enterCmdMode();
+  sendCommand("K,");
+  leaveCmdMode();  
+  while (response.indexOf("DISCONNECT") != -1) {
+    Serial.println(response);
+    receiveMessage();
+    delay(500);
+  }
+  Serial.println("Connection killed");
+}
+
+void BlueSmirf::reboot() {
+//  Serial.println("Leave command mode");
+  enterCmdMode();
+  sendCommand("R,1");
+  leaveCmdMode();
 }
 
 bool BlueSmirf::checkConnected() {
-  Serial.println("Check if connected");
+//  Serial.println("Check if connected");
+  String conStr;
   enterCmdMode();
-  sendCommand("GK");
-  if (response.startsWith("1")) isconnected = true;
+  sendCommand("GK", true, false);
+  if (myRole == 1) conStr = "4,0,0";
+  else conStr = "1,0,0";
+  if (response.indexOf(conStr) != -1) isconnected = true;
   else isconnected = false;
   leaveCmdMode();
   return isconnected;
 }
 
+void BlueSmirf::waitForAck() {
+  char a[3];
+  for (int j=0;j<3;j++) a[j]='-';
+  bool ackReceived = false;
+
+  while (!ackReceived) {
+    while (BSSerial.available()) {
+      a[0] = a[1];
+      a[1] = a[2];
+      a[2] = BSSerial.read();
+    }
+    if (a[0] == 'A' && a[1] == 'C' && a[2] == 'K') ackReceived = true;
+    delay(10);
+  }
+}
+
+void BlueSmirf::sendAck() {
+
+  mySerial.write("ACK",3);
+  
+}
 
 void BlueSmirf::setBaudrate(unsigned long speed) {
 
@@ -179,31 +224,35 @@ int BlueSmirf::searchDevices() {
 
   int devices = 0;
   bool searching = true;
-
-  for (int j=0; j<20; j++) {
+  String result = "";
+  
+  for (int j=0; j<10; j++) {
     availableDevicesNames[j] = "";
     availableDevicesMacs[j] = "";
   }
 
   enterCmdMode();
-  sendCommand("I,20");
+  sendCommand("I,4");
   leaveCmdMode();
 
-  while (searching) {
+  while ((result.indexOf("No Devices Found") == -1) && (result.indexOf("Inquiry Done") == -1)) {
+    Serial.print(".");
     delay(200);
     receiveMessage();
-    if (response.length() > 0) {
+    result += response;
+  }
+  Serial.println("");
+  if (result.indexOf("No Devices Found") != -1) return 0;
 
-      if (response.compareTo("Inquiry Done")) {
-        searching = false;
-      }
-      else {
-        availableDevicesMacs[devices] = response.substring(0,12);
-        availableDevicesNames[devices] = response.substring(12,response.indexOf(",",12));        
-        devices++;
-      }
-      
-   }
+  result = result.substring(8);
+  while (result.indexOf(",") != -1) {
+    availableDevicesMacs[devices] = result.substring(0,12);
+    availableDevicesNames[devices] = result.substring(13,response.indexOf(",",13));   
+    Serial.print(availableDevicesMacs[devices]);
+    Serial.print(" / ");
+    Serial.println(availableDevicesNames[devices]);
+    result = result.substring(14 + availableDevicesNames[devices].length());
+    devices++;
  }
  return devices;
 }
@@ -219,8 +268,10 @@ void BlueSmirf::connectTo(String device_mac) {
   sendCommand(cmd.c_str());
   leaveCmdMode();
   while (!isconnected) {
-    delay(1000);
-    checkConnected();
+    delay(200);
+    receiveMessage(); // get connected message out of the way
+    if (response.length() > 0) Serial.println(response);
+    if (response.indexOf("CONNECT") !=-1) isconnected = true;
   }
 }
 
@@ -247,5 +298,9 @@ void BlueSmirf::flush() {
 
 size_t BlueSmirf::write(uint8_t c) {
   return mySerial.write(c);
+}
+
+size_t BlueSmirf::write(const uint8_t *buffer, size_t size) {
+  return mySerial.write(buffer,size);
 }
 

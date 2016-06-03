@@ -70,16 +70,21 @@ public:
   int searchDevices(); // returns the number of devices found
   void connectTo(String device_mac); // connect to a given device
   void resetDevice(); // reset the device
-  void sendCommand(const char* cmd, bool cr=true);
+  void sendCommand(const char* cmd, bool cr=true, bool verbose=true);
   void enterCmdMode();
   void leaveCmdMode();
   bool checkConnected();
+  void killConnection();
+  void reboot();
+  void waitForAck();
+  void sendAck();
 
   virtual int available();
   virtual int read();
   virtual int peek();;
   virtual void flush();
   virtual size_t write(uint8_t c);
+  virtual size_t write(const uint8_t *buffer, size_t size);
 
   using Print::write;
 };

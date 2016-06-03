@@ -62,7 +62,7 @@ Bounce buttonConnect =   Bounce(CONNECTBUTTON, 8);
 const int myInput = AUDIO_INPUT_MIC;
 
 // Unique RCube name
-const char* myId = "RCube1";
+const char* myId = "RCube";
 
 // Remember which mode we're doing
 #define STOPPED 0
@@ -78,8 +78,14 @@ int mode = STOPPED;  // 0=stopped, 1=recording, 2=playing
 #define TRYING_TO_CONNECT 2
 int btstatus = NOT_CONNECTED;
 
+#define BT_BUF_SIZE 512
+
 // The file where data is recorded
 File frec;
+
+// time keeping
+unsigned long t1=0;
+unsigned long t2=0;
 
 void setup() {
   // Configure the pushbutton pins
@@ -112,12 +118,19 @@ void setup() {
   }
 
   // setup Bluetooth
-  BSSerial.begin(9600);  
+  BSSerial.begin(115200);  
   BSSerial.setDeviceName(myId);
+  BSSerial.reboot();
+
+  t1 = millis();
+  t2 = t2;
 }
 
 
 void loop() {
+  
+  t2 = millis();
+  
   // First, read the buttons
   buttonRecord.update();
   buttonPlay.update();
@@ -148,29 +161,34 @@ void loop() {
     }
   }
 
-  btstatus = BSSerial.checkConnected();
-  
-  if (mode == MASTER && btstatus == CONNECTED) {
-    transferRecording();
+  if (mode != RECORDING && mode != PLAYING) { // check the status if we are not playing or recording 
+    if ((t2 - t1) > 1000) { // only check every half a second, this takes some time
+      btstatus = BSSerial.checkConnected();
+      t1 = t2;
+      Serial.print("c");
+    }
   }
-  if (mode != MASTER && mode != SLAVE && btstatus == CONNECTED) {
+  if (mode == MASTER && btstatus == CONNECTED) { // receive recording from slave if we are master and connected
+    receiveRecording();
+  }
+  if (mode != MASTER && mode != SLAVE && btstatus == CONNECTED) { // if we are not neither slave nor master, but connected -> be slave and send recording
     if (mode == RECORDING) stopRecording();
     if (mode == PLAYING) stopPlaying();
     mode = SLAVE;
+    sendRecording();
   }
-  if (mode == SLAVE  && btstatus == NOT_CONNECTED) {
+  if (mode == SLAVE  && btstatus == NOT_CONNECTED) { // if we are slave, but unconnected, return to stopped mode
     mode = STOPPED;
   }
-  if (mode == RECORDING) {
+  if (mode == RECORDING) { // keep recording
     continueRecording();
   }
-  if (mode == PLAYING) {
+  if (mode == PLAYING) { // keep playing 
     continuePlaying();
   }
 
   // when using a microphone, continuously adjust gain
   if (myInput == AUDIO_INPUT_MIC) adjustMicLevel();
-
 }
 
 
@@ -258,27 +276,138 @@ void startTransmission() {
   devices = BSSerial.searchDevices();
   if (devices > 0) {
     for (int i=0;i<devices;i++) {
-      if (BSSerial.availableDevicesNames[i].indexOf("RCube") > 0) {
+      Serial.println(BSSerial.availableDevicesNames[i]);
+      if (BSSerial.availableDevicesNames[i].indexOf("RCube") != -1) {
         BSSerial.connectTo(BSSerial.availableDevicesMacs[i]);
+        i = devices;
+        mode = MASTER;
+        btstatus = CONNECTED;
+        Serial.println("Found and connected to other cube");
       }
-      i = devices;
+      else {
+        Serial.println("Found remote BT device, but no cube");
+      }
     }
-    mode = MASTER;
-    btstatus = CONNECTED;
-    Serial.println("Found and connected to other cube");
   }
   else {
     Serial.println("No remote devices found");
   }
 }
 
-void transferRecording() {
-  Serial.println("Transferring the recording to slave");
+void sendRecording() {
+  Serial.println("Sending recording");
+  char buf[BT_BUF_SIZE];
+  int i = 0;
+  int transferredBytes = 0;
+  bool finished = false;
+  const char* marker = "###";
 
-  // tbd
+  if (SD.exists("RECORD.RAW")) {
+    frec = SD.open("RECORD.RAW", FILE_READ);
+    if (frec) {
+      BSSerial.print(marker); // start MARKER
+      delayMicroseconds(100); 
 
-  // disconnect?? maybe make slave??
+//      BSSerial.write("asd",3); // start MARKER
+//      delayMicroseconds(100); 
 
+      while (!finished) {
+        while (frec.available() > 0 && i < BT_BUF_SIZE) {
+          buf[i++] = frec.read();       
+        }
+        BSSerial.write(buf,i);
+        delayMicroseconds(100); 
+        Serial.print("|");
+        Serial.print(i);
+        Serial.print(">");
+        transferredBytes = transferredBytes + i;
+        if (i < BT_BUF_SIZE) finished = true;
+        else i=0;
+        delay(10);
+      }
+      BSSerial.print(marker); // end MARKER
+      delayMicroseconds(100); 
+      frec.close();
+
+    }
+    Serial.println("");
+    Serial.print("Sent ");
+    Serial.println(transferredBytes);
+    Serial.println("Closed file");
+  }
+  else {
+    Serial.println("No recording to send, aborting");
+  }
+
+  // wait until master kills connection
+  Serial.println("Connection killed, going into stopped mode");
+  mode = STOPPED;
+  btstatus = NOT_CONNECTED;
+}
+
+void receiveRecording() {
+  Serial.println("Receiving recording");
+  bool recStarted = false;
+  bool recFinished = false;
+  char buf[BT_BUF_SIZE];
+  char a[3];
+  char incoming;
+  int i = 0;
+  int transferredBytes = 0;
+
+  for (int j=0;j<3;j++) a[j]='-';
+  
+  if (SD.exists("RECORD.RAW")) SD.remove("RECORD.RAW");
+  frec = SD.open("RECORD.RAW", FILE_WRITE);
+  if (!frec) return;
+
+  // wait for marker
+  while (!recStarted) {
+    while (BSSerial.available()) {
+      a[0] = a[1];
+      a[1] = a[2];
+      a[2] = BSSerial.read();
+//      delayMicroseconds(100); 
+      if (a[0] == '#' && a[1] == '#' && a[2] == '#') recStarted = true;
+    }
+    delay(10);
+  }
+  Serial.println("Start marker received");
+  while (!recFinished) {
+    while (BSSerial.available() && i < BT_BUF_SIZE && !recFinished) {
+      incoming = BSSerial.read();
+//      delayMicroseconds(100); 
+      buf[i++] = incoming;
+      a[0] = a[1];
+      a[1] = a[2];
+      a[2] = incoming;
+      if (a[0] == '#' && a[1] == '#' && a[2] == '#') {
+        recFinished = true; // received the end marker 
+        Serial.println("End marker received");
+      }
+    }
+    if (i == BT_BUF_SIZE || recFinished) {
+      // this technically also writes out the end marker... fix
+      if (recFinished && i > 2) i = i-3;
+      frec.write(buf, i);
+      Serial.print("<");
+      Serial.print(i);
+      Serial.print("|");
+      transferredBytes = transferredBytes + i;
+      i = 0;
+    }
+    else {
+      delay(10);
+    }
+  }
+  frec.close();
+  Serial.println("");
+  Serial.print("Received ");
+  Serial.println(transferredBytes);
+  Serial.println("Closed file");
+
+  
+  BSSerial.killConnection();
   BSSerial.makeSlave();
   mode = STOPPED;
   btstatus = NOT_CONNECTED;
