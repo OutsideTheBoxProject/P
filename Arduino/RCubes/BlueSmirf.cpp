@@ -84,9 +84,9 @@ void BlueSmirf::begin(unsigned long speed) {
 
    mySerial.begin(speed);
    enterCmdMode();
-   sendCommand("ST,253"); // Continous configuration, local only.
-   sendCommand("SM,0");
-   sendCommand("SO,%");
+   sendCommand("ST,0"); // who can configure (remote/local) and when (window)
+   sendCommand("SM,0"); // be slave to start with
+   sendCommand("SO,%"); // enable status messages like connect or disconnect
    leaveCmdMode();
    
 }
@@ -114,6 +114,7 @@ void BlueSmirf::killConnection() {
     delay(500);
   }
   Serial.println("Connection killed");
+  delay(1000); // safety 
 }
 
 void BlueSmirf::reboot() {

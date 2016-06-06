@@ -301,6 +301,7 @@ void sendRecording() {
   int transferredBytes = 0;
   bool finished = false;
   unsigned long ts= millis();
+  unsigned long waiting;
 
   if (SD.exists("RECORD.RAW")) {
     frec = SD.open("RECORD.RAW", FILE_READ);
@@ -310,25 +311,24 @@ void sendRecording() {
       
       while (!finished) {
 
-//        while (frec.available()) {
-//          incoming = frec.read();       
-//          BSSerial.write(incoming);
-//          delayMicroseconds(100); 
-//          transferredBytes++;
-//        }
-
         while (frec.available() > 0 && i < BT_BUF_SIZE) {
           buf[i++] = frec.read();       
           delayMicroseconds(100); 
         }
         BSSerial.write(buf,i);
-        delay(50); 
+        delay(70); 
         transferredBytes = transferredBytes + i;
         if (i == BT_BUF_SIZE) {
           Serial.print(">");
+          waiting = millis();
           while (BSSerial.available() == 0) {
 //            Serial.print(".");
             delay(1); // wait for the master to acknowledge buffer
+            if (millis() - waiting > 3000) { 
+              Serial.println("Connection seems to be dead, aborting");
+              finished = true;
+              break;
+            }
           }
           while (BSSerial.available() > 0) BSSerial.read(); // read reply
           i=0;
@@ -370,6 +370,7 @@ void receiveRecording() {
   int i = 0;
   int transferredBytes = 0;
   unsigned long ts= millis();
+  unsigned long tLastByte = ts;
 
   for (int j=0;j<3;j++) a[j]='-';
   
@@ -391,24 +392,6 @@ void receiveRecording() {
   Serial.println("Start marker received");
 
   while (!recFinished) {
-    
-//    while(BSSerial.available() > 0) {
-//      incoming = BSSerial.read();
-//      a[0] = a[1];
-//      a[1] = a[2];
-//      a[2] = incoming;
-//      if (a[0] == '#' && a[1] == '#' && a[2] == '#') {
-//        recFinished = true; // received the end marker 
-//        Serial.println("End marker received");
-//      }
-//      else {
-//        frec.write(incoming);
-//        transferredBytes++;
-//      }
-//    }
-//    delayMicroseconds(100); 
-//  }
-
     while (BSSerial.available() > 0 && i < BT_BUF_SIZE && !recFinished) {
       incoming = BSSerial.read();
       buf[i++] = incoming;
@@ -419,14 +402,19 @@ void receiveRecording() {
         recFinished = true; // received the end marker 
         Serial.println("End marker received");
       }
-    } 
-    if (i == BT_BUF_SIZE) {
+      tLastByte = millis();
+    }     
+    if (i == BT_BUF_SIZE || recFinished) {
       if (recFinished && i > 2) i = i-3;
       frec.write(buf, i);
       transferredBytes = transferredBytes + i;
       i = 0;
       BSSerial.print("a"); // tell the slave we have received buffer
-      Serial.print("<");
+      Serial.print("<");      
+    }
+    if ((millis()-tLastByte) > 3000) {
+      Serial.println("Connection seems to be dead, aborting");
+      break;
     }
   }
 
