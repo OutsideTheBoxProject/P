@@ -223,8 +223,8 @@ int BlueSmirf::searchDevices() {
    Serial.println("Searching for remote devices");
 
   int devices = 0;
-  bool searching = true;
   String result = "";
+  int index;
   
   for (int j=0; j<10; j++) {
     availableDevicesNames[j] = "";
@@ -242,16 +242,19 @@ int BlueSmirf::searchDevices() {
     result += response;
   }
   Serial.println("");
+  Serial.println(result);
   if (result.indexOf("No Devices Found") != -1) return 0;
 
   result = result.substring(8);
   while (result.indexOf(",") != -1) {
     availableDevicesMacs[devices] = result.substring(0,12);
-    availableDevicesNames[devices] = result.substring(13,response.indexOf(",",13));   
+    availableDevicesNames[devices] = result.substring(13,result.indexOf(",",13));   
     Serial.print(availableDevicesMacs[devices]);
     Serial.print(" / ");
     Serial.println(availableDevicesNames[devices]);
     result = result.substring(14 + availableDevicesNames[devices].length());
+    index = result.indexOf(",");
+    if (index >12) result = result.substring(index-12);
     devices++;
  }
  return devices;

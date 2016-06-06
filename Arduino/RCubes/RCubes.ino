@@ -305,32 +305,38 @@ void sendRecording() {
   if (SD.exists("RECORD.RAW")) {
     frec = SD.open("RECORD.RAW", FILE_READ);
     if (frec) {
-      BSSerial.print(marker); // start MARKER
+      BSSerial.write(marker, 3); // start MARKER
       delayMicroseconds(100); 
 
-//      BSSerial.write("asd",3); // start MARKER
-//      delayMicroseconds(100); 
+//      BSSerial.write("Hello!",6);
+//      delayMicroseconds(100);
+
+//      for (int j=0;j<20;j++) {
+//        BSSerial.write('a'); 
+//        delayMicroseconds(100); 
+//      }
 
       while (!finished) {
         while (frec.available() > 0 && i < BT_BUF_SIZE) {
           buf[i++] = frec.read();       
         }
         BSSerial.write(buf,i);
-        delayMicroseconds(100); 
-        Serial.print("|");
-        Serial.print(i);
-        Serial.print(">");
+        delay(50);
+//        Serial.print("|");
+//        Serial.print(i);
+//        Serial.print(">");
         transferredBytes = transferredBytes + i;
         if (i < BT_BUF_SIZE) finished = true;
         else i=0;
-        delay(10);
+//        delay(10);
       }
-      BSSerial.print(marker); // end MARKER
+      delay(500);
+      BSSerial.write(marker,3); // end MARKER
       delayMicroseconds(100); 
       frec.close();
 
     }
-    Serial.println("");
+//    Serial.println("");
     Serial.print("Sent ");
     Serial.println(transferredBytes);
     Serial.println("Closed file");
@@ -363,15 +369,15 @@ void receiveRecording() {
 
   // wait for marker
   while (!recStarted) {
-    while (BSSerial.available()) {
+    while (BSSerial.available() && !recStarted) {
       a[0] = a[1];
       a[1] = a[2];
       a[2] = BSSerial.read();
 //      delayMicroseconds(100); 
       if (a[0] == '#' && a[1] == '#' && a[2] == '#') recStarted = true;
     }
-    delay(10);
   }
+  for (int j=0;j<3;j++) a[j]='-';  
   Serial.println("Start marker received");
   while (!recFinished) {
     while (BSSerial.available() && i < BT_BUF_SIZE && !recFinished) {
@@ -386,22 +392,16 @@ void receiveRecording() {
         Serial.println("End marker received");
       }
     }
-    if (i == BT_BUF_SIZE || recFinished) {
-      // this technically also writes out the end marker... fix
-      if (recFinished && i > 2) i = i-3;
-      frec.write(buf, i);
-      Serial.print("<");
-      Serial.print(i);
-      Serial.print("|");
-      transferredBytes = transferredBytes + i;
-      i = 0;
-    }
-    else {
-      delay(10);
-    }
+    if (recFinished && i > 2) i = i-3;
+    frec.write(buf, i);
+//    Serial.print("<");
+//    Serial.print(i);
+//    Serial.print("|");
+    transferredBytes = transferredBytes + i;
+    i = 0;
   }
   frec.close();
-  Serial.println("");
+//  Serial.println("");
   Serial.print("Received ");
   Serial.println(transferredBytes);
   Serial.println("Closed file");
