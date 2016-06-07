@@ -8,21 +8,22 @@
 // Teensy 3.2
 // Audio Shield http://www.pjrc.com/store/teensy3_audio.html
 //
-// Three pushbuttons need:
-//   Record Button: pin 4 to GND
-//   Play Button:   pin 5 to GND
-//   Connect Button: pin 6 to GND
+// Three pushbuttons need - all to ground, internal pullup
 //
-// Status LEDs
-//   Connection pin 7   
-//   Recording pin 8
-//   Playing pin 9
+// Status LEDs via shared 150Ohm to ground
 //
 // Bluetooth Module
 //  Serial: 
 //    RX 0
 //    TX 1
-//  Interrupt: 3
+
+// PINS:
+#define RECBUTTON 4
+#define PLAYBUTTON 5
+#define CONNECTBUTTON 3
+#define CONNECTLED 17
+#define RECORDLED 8
+#define PLAYLED 16
 
 
 const char* other_addr = "0006667480E9";
@@ -49,13 +50,6 @@ AudioConnection          patchCord3(playRaw1, 0, i2s1, 0);
 AudioConnection          patchCord4(playRaw1, 0, i2s1, 1);
 AudioControlSGTL5000     sgtl5000_1;     //xy=265,212
 // GUItool: end automatically generated code
-
-#define RECBUTTON 4
-#define PLAYBUTTON 5
-#define CONNECTBUTTON 6
-#define CONNECTLED 7
-#define RECORDLED 8
-#define PLAYLED 9
 
 // Bounce objects to easily and reliably read the buttons
 Bounce buttonRecord = Bounce(RECBUTTON, 8); // 8 = 8 ms debounce time
@@ -138,6 +132,7 @@ void setup() {
 
   t1 = millis();
   t2 = t2;
+  
 }
 
 
@@ -184,6 +179,7 @@ void loop() {
       case RECORDING: digitalWrite(RECORDLED, HIGH); break;
       case MASTER: digitalWrite(CONNECTLED, HIGH); break;
       case SLAVE: digitalWrite(CONNECTLED, HIGH); break;
+      case STOPPED: break;
     }
     old_mode = mode;
   }
@@ -261,7 +257,7 @@ void continueRecording() {
     // for occasional high SD card latency, as long as
     // the average write time is under 5802 us.
 //    Serial.print("SD write, us=");
-    Serial.println(usec);
+//    Serial.println(usec);
   }
 }
 

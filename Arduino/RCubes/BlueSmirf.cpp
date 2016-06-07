@@ -277,7 +277,7 @@ void BlueSmirf::connectTo(String device_mac) {
     delay(200);
     receiveMessage(); // get connected message out of the way
     if (response.length() > 0) Serial.println(response);
-    if (response.indexOf("CONNECT") !=-1) isconnected = true;
+    if (response.indexOf("CONNECTED") !=-1) isconnected = true;
     if ((millis()-ts) > 6000) {
       Serial.println("Cannot connect, aborting");
       break;
