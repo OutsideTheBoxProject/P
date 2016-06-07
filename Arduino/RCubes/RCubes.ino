@@ -15,7 +15,8 @@
 //
 // Status LEDs
 //   Connection pin 7   
-//
+//   Recording pin 8
+//   Playing pin 9
 //
 // Bluetooth Module
 //  Serial: 
@@ -23,6 +24,9 @@
 //    TX 1
 //  Interrupt: 3
 
+
+const char* other_addr = "0006667480E9";
+//const char* other_addr = "000666748115";
 
 #include <Bounce.h>
 #include <Audio.h>
@@ -50,12 +54,16 @@ AudioControlSGTL5000     sgtl5000_1;     //xy=265,212
 #define PLAYBUTTON 5
 #define CONNECTBUTTON 6
 #define CONNECTLED 7
+#define RECORDLED 8
+#define PLAYLED 9
 
 // Bounce objects to easily and reliably read the buttons
 Bounce buttonRecord = Bounce(RECBUTTON, 8); // 8 = 8 ms debounce time
 Bounce buttonPlay =   Bounce(PLAYBUTTON, 8);  
 Bounce buttonConnect =   Bounce(CONNECTBUTTON, 8);  
 
+// max record time in seconds
+#define MAX_REC_TIME 10 
 
 // which input on the audio shield will be used?
 //const int myInput = AUDIO_INPUT_LINEIN;
@@ -71,6 +79,7 @@ const char* myId = "RCube";
 #define MASTER 4
 #define SLAVE 5
 int mode = STOPPED;  // 0=stopped, 1=recording, 2=playing
+int old_mode = mode; 
 
 // Remember BT connection status
 #define CONNECTED 1
@@ -86,6 +95,7 @@ File frec;
 // time keeping
 unsigned long t1=0;
 unsigned long t2=0;
+unsigned long recTime=0;
 
 void setup() {
   // Configure the pushbutton pins
@@ -93,8 +103,12 @@ void setup() {
   pinMode(PLAYBUTTON, INPUT_PULLUP);
   pinMode(CONNECTBUTTON, INPUT_PULLUP);
   pinMode(CONNECTLED, OUTPUT);
+  pinMode(RECORDLED, OUTPUT);
+  pinMode(PLAYLED, OUTPUT);
 
   digitalWrite(CONNECTLED, LOW);
+  digitalWrite(RECORDLED, LOW);
+  digitalWrite(PLAYLED, LOW);
 
   // Audio connections require memory, and the record queue
   // uses this memory to buffer incoming audio.
@@ -161,6 +175,19 @@ void loop() {
     }
   }
 
+  if (old_mode != mode) { // mode has changed, get status LEDs
+    digitalWrite(CONNECTLED, LOW);
+    digitalWrite(RECORDLED, LOW);
+    digitalWrite(PLAYLED, LOW);
+    switch (mode) {
+      case PLAYING: digitalWrite(PLAYLED, HIGH); break;
+      case RECORDING: digitalWrite(RECORDLED, HIGH); break;
+      case MASTER: digitalWrite(CONNECTLED, HIGH); break;
+      case SLAVE: digitalWrite(CONNECTLED, HIGH); break;
+    }
+    old_mode = mode;
+  }
+  
   if (mode != RECORDING && mode != PLAYING) { // check the status if we are not playing or recording 
     if ((t2 - t1) > 1000) { // only check every half a second, this takes some time
       btstatus = BSSerial.checkConnected();
@@ -180,7 +207,8 @@ void loop() {
     mode = STOPPED;
   }
   if (mode == RECORDING) { // keep recording
-    continueRecording();
+    if (millis() - recTime > MAX_REC_TIME * 1000) stopRecording();
+    else continueRecording();
   }
   if (mode == PLAYING) { // keep playing 
     continuePlaying();
@@ -188,11 +216,13 @@ void loop() {
 
   // when using a microphone, continuously adjust gain
   if (myInput == AUDIO_INPUT_MIC) adjustMicLevel();
+
 }
 
 
 void startRecording() {
   Serial.println("startRecording");
+  recTime = millis();
   if (SD.exists("RECORD.RAW")) {
     // The SD library writes new data to the end of the
     // file, so to start a new recording, the old file
@@ -230,7 +260,7 @@ void continueRecording() {
     // approximately 301700 us of audio, to allow time
     // for occasional high SD card latency, as long as
     // the average write time is under 5802 us.
-    Serial.print("SD write, us=");
+//    Serial.print("SD write, us=");
     Serial.println(usec);
   }
 }
@@ -272,25 +302,36 @@ void startTransmission() {
   int devices;
 
   BSSerial.makeMaster();
-  devices = BSSerial.searchDevices();
-  if (devices > 0) {
-    for (int i=0;i<devices;i++) {
-      Serial.println(BSSerial.availableDevicesNames[i]);
-      if (BSSerial.availableDevicesNames[i].indexOf("RCube") != -1) {
-        BSSerial.connectTo(BSSerial.availableDevicesMacs[i]);
-        i = devices;
-        mode = MASTER;
-        btstatus = CONNECTED;
-        Serial.println("Found and connected to other cube");
-      }
-      else {
-        Serial.println("Found remote BT device, but no cube");
-      }
-    }
-  }
-  else {
-    Serial.println("No remote devices found");
-  }
+
+  BSSerial.connectTo(other_addr);
+  if (BSSerial.isconnected) {
+    mode = MASTER;
+    btstatus = CONNECTED;
+    Serial.println("Found and connected to other cube");
+  }  
+
+  
+//  devices = BSSerial.searchDevices();
+//  if (devices > 0) {
+//    for (int i=0;i<devices;i++) {
+//      Serial.println(BSSerial.availableDevicesNames[i]);
+//      if (BSSerial.availableDevicesNames[i].indexOf("RCube") != -1) {
+//        BSSerial.connectTo(BSSerial.availableDevicesMacs[i]);
+//        if (BSSerial.isconnected) {
+//          i = devices;
+//          mode = MASTER;
+//          btstatus = CONNECTED;
+//          Serial.println("Found and connected to other cube");
+//        }
+//      }
+//      else {
+//        Serial.println("Found remote BT device, but no cube");
+//      }
+//    }
+//  }
+//  else {
+//    Serial.println("No remote devices found");
+//  }
 }
 
 void sendRecording() {

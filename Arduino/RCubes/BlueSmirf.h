@@ -47,7 +47,6 @@ private:
   int myRole = 0; // 0 = Slave (default), 1 = Master 
   void receiveMessage();
   String response;
-  bool isconnected;
   
 public:
   BlueSmirf(int rx_pin, int tx_pin) : mySerial(rx_pin, tx_pin)
@@ -58,6 +57,7 @@ public:
 
   String availableDevicesMacs[10];
   String availableDevicesNames[10];
+  bool isconnected;
 
   void begin(unsigned long speed = 9600);
   void end();

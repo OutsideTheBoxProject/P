@@ -266,6 +266,8 @@ void BlueSmirf::connectTo(String device_mac) {
    Serial.println("");
    Serial.println("Connect to a mac");
 
+   unsigned long ts = millis();
+
   isconnected = false;
   enterCmdMode();
   String cmd = "C," + device_mac;
@@ -276,6 +278,10 @@ void BlueSmirf::connectTo(String device_mac) {
     receiveMessage(); // get connected message out of the way
     if (response.length() > 0) Serial.println(response);
     if (response.indexOf("CONNECT") !=-1) isconnected = true;
+    if ((millis()-ts) > 6000) {
+      Serial.println("Cannot connect, aborting");
+      break;
+    }
   }
 }
 
